@@ -1,4 +1,7 @@
-#load "jai_json.jai";
+#import "Basic";
+#import "Hash_Table";
+
+#import,file "module.jai";
 
 test_parse_string :: () {
   json :: "\"string\"   ";

@@ -26,7 +26,7 @@ build :: () {
     set_optimization(*build_options, .DEBUG);
     set_build_options(build_options, w);
 
-    add_build_file("test_jai_json.jai", w);
+    add_build_file("test.jai", w);
   } else {
     w := compiler_create_workspace();
     build_options := get_build_options();
@@ -37,7 +37,7 @@ build :: () {
     set_optimization(*build_options, .OPTIMIZED);
     set_build_options(build_options, w);
 
-    add_build_file("jai_json.jai", w);
+    add_build_file("module.jai", w);
   }
 
   set_build_options_dc(.{do_output=false});

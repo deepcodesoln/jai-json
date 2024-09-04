@@ -1,25 +1,31 @@
 # jai-json
 
-A JSON deserializer for Jai programs. This only supports ASCII.
+A JSON deserializer for Jai programs.
 
 ## Building
 
-**Building**
+You can build the distributable library with `jai build.jai`. You can build the
+tests with `jai build.jai - test`. Output is written to `./build`.
+
+## Usage
+
+To use this in `other_project`
 
 ```
-jai first.jai
+cd other_project/
+mkdir modules
+git submodule add https://github.com/deepcodesoln/jai-json modules/Json
 ```
 
-**Testing**
+Then, in `other_project/`
 
 ```
-jai first.jai - test
+#import "Json";
 ```
-
-Output is written to `./build`.
 
 ## Known Issues:
 
+1. No UTF-8 support, only ASCII.
 1. No support for escaped strings in strings.
 1. No validation of float schema; this will try to parse `1eee3` as a number.
 1. No error handling; if we detect anything wrong, we terminate the program.
