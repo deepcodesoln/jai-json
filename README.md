@@ -14,7 +14,7 @@ To use this in `other_project`
 ```
 cd other_project/
 mkdir modules
-git submodule add https://github.com/deepcodesoln/jai-json modules/Json
+git submodule add git@github.com:deepcodesoln/jai-json.git modules/Json
 ```
 
 Then, in `other_project/`
