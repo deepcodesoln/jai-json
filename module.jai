@@ -2,9 +2,123 @@
 #import "Hash_Table";
 #import "String";
 
+// Populate `obj` from data parsed from `json`. `obj` must be a struct or a resizable
+// array. For struct members and array elements, only `s64` (or `int`), `float64`, `bool`
+// and `string` are supported. Structs and arrays can be nested. Arrays in the provided
+// JSON are expected to contain only a single element type per array.
+//
+// This procedure does not support JSON `null`, and this procedure expects that if `obj`
+// is a struct that all members in the struct have corresponding entries in the provided
+// JSON. That is, this procedure does not support optional members or missing elements in
+// the provided JSON.
+from_json :: (obj: *$A, json: string) {
+  json_value, _ := parse_value(json);
+  auto_assign(cast(*u8)obj, type_info(A), json_value);
+}
+
 // Parse JSON content from a string. This returns the parsed content and any remaining
 // characters from `s_` that were not processed.
 parse_json :: parse_value;
+
+// Populate the resizable array pointed to by `array` with the value provided in
+// `json_value` guided by the `ti_array` describing the type semantics of what lives at
+// `obj`.
+auto_assign_array :: (array: *u8, ti_array: *Type_Info_Array, json_value: *JSON_Value) {
+  assign :: (dst_array: *u8, json_array: *JSON_Array, _: $A, t_info: *Type_Info) {
+    a: [..] A;
+    array_resize(*a, json_array.v.count);
+    for e, i: json_array.v {
+      auto_assign(cast(*u8)*a[i], t_info, e);
+    }
+    memcpy(dst_array, cast(*u8)*a, size_of(type_of(a)));
+  }
+
+  json_array := cast(*JSON_Array)json_value;
+  if ti_array.element_type.type == {
+    case .INTEGER;
+      assign(array, json_array, int, type_info(int));
+    case .FLOAT;
+      assign(array, json_array, float64, type_info(float64));
+    case .BOOL;
+      assign(array, json_array, bool, type_info(bool));
+    case .STRING;
+      assign(array, json_array, string, type_info(string));
+    case .STRUCT;
+      a: [..] u8;  // use byte array for type erasure
+      array_reserve(*a, json_array.v.count * ti_array.element_type.runtime_size);
+      a.count = json_array.v.count;
+      for e, i: json_array.v {
+        auto_assign(cast(*u8)(a.data + ti_array.element_type.runtime_size * i), ti_array.element_type, e);
+      }
+      memcpy(array, *a, size_of(type_of(a)));
+    case .ARRAY;
+      a: [..] u8;  // use byte array for type erasure
+      array_reserve(*a, json_array.v.count * ti_array.element_type.runtime_size);
+      a.count = json_array.v.count;
+      for e, i: json_array.v {
+        auto_assign_array(cast(*u8)(a.data + ti_array.element_type.runtime_size * i), cast(*Type_Info_Array)ti_array.element_type, e);
+      }
+      memcpy(array, *a, size_of(type_of(a)));
+    case;
+      assert(false, "unsupported auto_assign_array type '%'\n", ti_array.type);
+  }
+}
+
+// Populate the memory pointed to by `obj` with the value provided in `json_value`
+// guided by the `ti_obj` describing the type semantics of what lives at `obj`.
+auto_assign :: (obj: *u8, ti_obj: *Type_Info, json_value: *JSON_Value) {
+  if ti_obj.type == {
+    case .INTEGER;
+      assert(json_value.type == JSON_Number);
+      i := cast(s64)((cast(*JSON_Number)json_value).v);
+      assert(ti_obj.runtime_size == size_of(type_of(i)));
+      memcpy(cast(*u8)obj, cast(*u8)*i, ti_obj.runtime_size);
+    case .FLOAT;
+      assert(json_value.type == JSON_Number);
+      f := (cast(*JSON_Number)json_value).v;
+      assert(ti_obj.runtime_size == size_of(type_of(f)));
+      memcpy(cast(*u8)obj, cast(*u8)*f, ti_obj.runtime_size);
+    case .BOOL;
+      assert(json_value.type == JSON_Bool);
+      b := (cast(*JSON_Bool)json_value).v;
+      assert(ti_obj.runtime_size == size_of(type_of(b)));
+      memcpy(cast(*u8)obj, cast(*u8)*b, ti_obj.runtime_size);
+    case .STRING;
+      assert(json_value.type == JSON_String);
+      s := (cast(*JSON_String)json_value).v;
+      assert(ti_obj.runtime_size == size_of(type_of(s)));
+      memcpy(cast(*u8)obj, cast(*u8)*s, ti_obj.runtime_size);
+    case .STRUCT;
+      assert(json_value.type == JSON_Object);
+      t := (cast(*JSON_Object)json_value).v;
+      for member: (cast(*Type_Info_Struct)ti_obj).members {
+        v, f := table_find(*t, member.name);
+        assert(f);
+        member_ptr := obj + member.offset_in_bytes;
+        if member.type.type == {
+          case .INTEGER;
+            auto_assign(member_ptr, type_info(s64), v);
+          case .FLOAT;
+            auto_assign(member_ptr, type_info(float64), v);
+          case .BOOL;
+            auto_assign(member_ptr, type_info(bool), v);
+          case .STRING;
+            auto_assign(member_ptr, type_info(string), v);
+          case .ARRAY;
+            auto_assign_array(member_ptr, cast(*Type_Info_Array)member.type, v);
+          case .STRUCT;
+            auto_assign(member_ptr, member.type, v);
+          case;
+            assert(false, tprint("unsupported type '%'\n", member.type.type));
+        }
+      }
+    case .ARRAY;
+      assert(json_value.type == JSON_Array);
+      auto_assign_array(obj, cast(*Type_Info_Array)ti_obj, json_value);
+    case;
+      assert(false, tprint("unsupported type '%'\n", ti_obj.type));
+  }
+}
 
 // Parse a value out of `s_`. The first character of `s_` must be the first character
 // of the value to parse. This returns a parsed value and a substring of `s_` starting
