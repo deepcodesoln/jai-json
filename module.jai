@@ -8,7 +8,7 @@
 // JSON are expected to contain only a single element type per array.
 //
 // This procedure does not support JSON `null`, and this procedure expects that if `obj`
-// is a struct that all members in the struct have corresponding entries in the provided
+// is a struct that all members in the struct have identically-named keys in the provided
 // JSON. That is, this procedure does not support optional members or missing elements in
 // the provided JSON.
 from_json :: (obj: *$A, json: string) {
