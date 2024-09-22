@@ -9,7 +9,7 @@ tests with `jai build.jai - test`. Output is written to `./build`.
 
 ## Usage
 
-To use this in `other_project`
+To use this in `other_project`:
 
 ```
 cd other_project/
@@ -17,7 +17,7 @@ mkdir modules
 git submodule add git@github.com:deepcodesoln/jai-json.git modules/Json
 ```
 
-Then, in `other_project/`
+Then, in `other_project/`:
 
 ```
 Json :: #import "Json";
@@ -43,4 +43,3 @@ full API documentation for `from_json`.
 1. No UTF-8 support, only ASCII.
 1. No support for escaped strings in strings.
 1. No validation of float schema; this will try to parse `1eee3` as a number.
-1. No error handling; if we detect anything wrong, we terminate the program.
