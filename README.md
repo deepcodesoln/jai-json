@@ -1,6 +1,7 @@
 # jai-json
 
-A JSON deserializer for Jai programs.
+A JSON deserializer for Jai programs. Compatible with at least the 0.1.093 Jai
+toolchain.
 
 ## Building
 
@@ -43,3 +44,4 @@ full API documentation for `from_json`.
 1. No UTF-8 support, only ASCII.
 1. No support for escaped strings in strings.
 1. No validation of float schema; this will try to parse `1eee3` as a number.
+1. No memory analysis done; may leak.
