@@ -23,17 +23,16 @@ Error :: enum u8 {
 // and `string` are supported. Structs and arrays can be nested. Arrays in the provided
 // JSON are expected to contain only a single element type per array.
 //
-// This procedure does not support JSON `null`, and this procedure expects that if `obj`
-// is a struct that all members in the struct have identically-named keys in the provided
-// JSON. That is, this procedure does not support optional members or missing elements in
-// the provided JSON.
+// This procedure does not support JSON `null`. If `allow_missing_keys` is false, this
+// procedure expects that if `obj` is a struct that all members in the struct have
+// identically-named keys in the provided JSON.
 //
 // If the returned error code is anything but `.NO_ERROR`, updates to `obj` should be
 // treated as incomplete, and no member values should be relied on.
-from_json :: (obj: *$A, json: string) -> Error {
+from_json :: (obj: *$A, json: string, allow_missing_keys: bool) -> Error {
   json_value, _, error := parse_value(json);
   if error return error;
-  error = auto_assign(cast(*u8)obj, type_info(A), json_value);
+  error = auto_assign(cast(*u8)obj, type_info(A), json_value, allow_missing_keys);
   return error;
 }
 
@@ -46,14 +45,16 @@ parse_json :: parse_value;
 // `json_value` guided by the `ti_array` describing the type semantics of what lives at
 // `obj`.
 //
+// `allow_missing_keys` is not used directly but is passed through to recursive calls.
+//
 // If the return value is anything but `.NO_ERROR`, treat `array` as partially-assigned
 // and thus invalid.
-auto_assign_array :: (array: *u8, ti_array: *Type_Info_Array, json_value: *JSON_Value) -> Error {
-  assign :: (dst_array: *u8, json_array: *JSON_Array, _: $A, t_info: *Type_Info) {
+auto_assign_array :: (array: *u8, ti_array: *Type_Info_Array, json_value: *JSON_Value, allow_missing_keys: bool) -> Error {
+  assign :: (dst_array: *u8, json_array: *JSON_Array, _: $A, t_info: *Type_Info, allow_missing_keys: bool) {
     a: [..] A;
     array_resize(*a, json_array.v.count);
     for e, i: json_array.v {
-      auto_assign(cast(*u8)*a[i], t_info, e);
+      auto_assign(cast(*u8)*a[i], t_info, e, allow_missing_keys);
     }
     memcpy(dst_array, cast(*u8)*a, size_of(type_of(a)));
   }
@@ -61,19 +62,19 @@ auto_assign_array :: (array: *u8, ti_array: *Type_Info_Array, json_value: *JSON_
   json_array := cast(*JSON_Array)json_value;
   if ti_array.element_type.type == {
     case .INTEGER;
-      assign(array, json_array, int, type_info(int));
+      assign(array, json_array, int, type_info(int), allow_missing_keys);
     case .FLOAT;
-      assign(array, json_array, float64, type_info(float64));
+      assign(array, json_array, float64, type_info(float64), allow_missing_keys);
     case .BOOL;
-      assign(array, json_array, bool, type_info(bool));
+      assign(array, json_array, bool, type_info(bool), allow_missing_keys);
     case .STRING;
-      assign(array, json_array, string, type_info(string));
+      assign(array, json_array, string, type_info(string), allow_missing_keys);
     case .STRUCT;
       a: [..] u8;  // use byte array for type erasure
       array_reserve(*a, json_array.v.count * ti_array.element_type.runtime_size);
       a.count = json_array.v.count;
       for e, i: json_array.v {
-        auto_assign(cast(*u8)(a.data + ti_array.element_type.runtime_size * i), ti_array.element_type, e);
+        auto_assign(cast(*u8)(a.data + ti_array.element_type.runtime_size * i), ti_array.element_type, e, allow_missing_keys);
       }
       memcpy(array, *a, size_of(type_of(a)));
     case .ARRAY;
@@ -81,7 +82,7 @@ auto_assign_array :: (array: *u8, ti_array: *Type_Info_Array, json_value: *JSON_
       array_reserve(*a, json_array.v.count * ti_array.element_type.runtime_size);
       a.count = json_array.v.count;
       for e, i: json_array.v {
-        error := auto_assign_array(cast(*u8)(a.data + ti_array.element_type.runtime_size * i), cast(*Type_Info_Array)ti_array.element_type, e);
+        error := auto_assign_array(cast(*u8)(a.data + ti_array.element_type.runtime_size * i), cast(*Type_Info_Array)ti_array.element_type, e, allow_missing_keys);
         if error then return error;
       }
       memcpy(array, *a, size_of(type_of(a)));
@@ -93,11 +94,13 @@ auto_assign_array :: (array: *u8, ti_array: *Type_Info_Array, json_value: *JSON_
 }
 
 // Populate the memory pointed to by `obj` with the value provided in `json_value`
-// guided by the `ti_obj` describing the type semantics of what lives at `obj`.
+// guided by the `ti_obj` describing the type semantics of what lives at `obj`. If
+// populating a struct, require a JSON object to have keys named identically to the
+// struct members if `allow_missing_keys` is false.
 //
 // If the return value is anything but `.NO_ERROR`, treat `obj` as partially-assigned
 // and thus invalid.
-auto_assign :: (obj: *u8, ti_obj: *Type_Info, json_value: *JSON_Value) -> Error {
+auto_assign :: (obj: *u8, ti_obj: *Type_Info, json_value: *JSON_Value, allow_missing_keys: bool) -> Error {
   if ti_obj.type == {
     case .INTEGER;
       if (json_value.type != JSON_Number) {
@@ -145,23 +148,27 @@ auto_assign :: (obj: *u8, ti_obj: *Type_Info, json_value: *JSON_Value) -> Error 
         v, f := table_find(*t, member.name);
         if (!f) {
           log_error("When auto assigning, found no such key in JSON: %.", member.name);
-          return .NO_SUCH_JSON_KEY;
+          if (allow_missing_keys) {
+            continue;
+          } else {
+            return .NO_SUCH_JSON_KEY;
+          }
         }
         member_ptr := obj + member.offset_in_bytes;
         e: Error;
         if member.type.type == {
           case .INTEGER;
-            e = auto_assign(member_ptr, type_info(s64), v);
+            e = auto_assign(member_ptr, type_info(s64), v, allow_missing_keys);
           case .FLOAT;
-            e = auto_assign(member_ptr, type_info(float64), v);
+            e = auto_assign(member_ptr, type_info(float64), v, allow_missing_keys);
           case .BOOL;
-            e = auto_assign(member_ptr, type_info(bool), v);
+            e = auto_assign(member_ptr, type_info(bool), v, allow_missing_keys);
           case .STRING;
-            e = auto_assign(member_ptr, type_info(string), v);
+            e = auto_assign(member_ptr, type_info(string), v, allow_missing_keys);
           case .ARRAY;
-            e = auto_assign_array(member_ptr, cast(*Type_Info_Array)member.type, v);
+            e = auto_assign_array(member_ptr, cast(*Type_Info_Array)member.type, v, allow_missing_keys);
           case .STRUCT;
-            e = auto_assign(member_ptr, member.type, v);
+            e = auto_assign(member_ptr, member.type, v, allow_missing_keys);
           case;
             log_error("When assigning an object, encountered unsupported member type %.", member.type.type);
             e = .UNSUPPORTED_ASSIGNMENT_TYPE;
@@ -178,7 +185,7 @@ auto_assign :: (obj: *u8, ti_obj: *Type_Info, json_value: *JSON_Value) -> Error 
         log_error("When auto assigning, got array, but it was not resizable.");
         return .MISMATCHED_SOURCE_AND_DESTINATION_TYPES;
       }
-      e := auto_assign_array(obj, ti_a, json_value);
+      e := auto_assign_array(obj, ti_a, json_value, allow_missing_keys);
       if e return e;
     case;
       log_error("When auto assigning, encountered unsupported type %.", ti_obj.type);

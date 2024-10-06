@@ -126,6 +126,21 @@ test_parse_object_failed :: () {
   assert(error == .DUPLICATE_KEY);
 }
 
+test_parse_object_missing_keys :: () {
+  json := #string DONE
+{
+  "a": 1,
+  "b": 2
+}
+  DONE
+
+  T :: struct {
+    a: int;
+    b: int;
+  }
+
+}
+
 test_parse_array :: () {
   json := "[ \"a\", \"b\" ]   ";
   value, remainder, error := parse_array(json);
@@ -280,7 +295,8 @@ test_auto_assign_struct :: () {
   }
 
   f: Foo;
-  from_json(*f, JSON);
+  error := from_json(*f, JSON, false);
+  assert(!error);
   assert(f.a == 1);
   assert(f.b == -1.0);
   assert(f.c == false);
@@ -302,7 +318,7 @@ test_auto_assign_struct_failed :: () {
   }
 
   f: Foo;
-  error := from_json(*f, json);
+  error := from_json(*f, json, false);
   assert(error == .UNSUPPORTED_ASSIGNMENT_TYPE);
 }
 
@@ -310,7 +326,7 @@ test_auto_assign_array :: () {
   json := "[0, 1, 2, 3, 4]";
 
   a: [..] int;
-  from_json(*a, json);
+  from_json(*a, json, false);
   for e, i: a {
     assert(e == i);
   }
@@ -318,7 +334,7 @@ test_auto_assign_array :: () {
   json = "[[1]]";
 
   b: [..][..] int;
-  from_json(*b, json);
+  from_json(*b, json, false);
   assert(b[0][0] == 1);
 }
 
@@ -326,7 +342,7 @@ test_auto_assign_array_failed :: () {
   json :: "[]";
 
   a: [..] *int;
-  error := from_json(*a, json);
+  error := from_json(*a, json, false);
   assert(error == .UNSUPPORTED_ASSIGNMENT_TYPE);
 }
 
@@ -334,31 +350,31 @@ test_auto_assign_failed :: () {
   // Int.
   i: u8 = 0;
   jv: JSON_Value = .{type = JSON_String};
-  error := auto_assign(cast(*u8)*i, type_info(type_of(i)), *jv);
+  error := auto_assign(cast(*u8)*i, type_info(type_of(i)), *jv, false);
   assert(error == .MISMATCHED_SOURCE_AND_DESTINATION_TYPES);
 
   jv = .{type = JSON_Number};
-  error = auto_assign(cast(*u8)*i, type_info(type_of(i)), *jv);
+  error = auto_assign(cast(*u8)*i, type_info(type_of(i)), *jv, false);
   assert(error == .MISMATCHED_SOURCE_AND_DESTINATION_RUNTIME_SIZES);
 
   // Float.
   jv = .{type = JSON_String};
   f: float32;
-  error = auto_assign(cast(*u8)*f, type_info(type_of(f)), *jv);
+  error = auto_assign(cast(*u8)*f, type_info(type_of(f)), *jv, false);
   assert(error == .MISMATCHED_SOURCE_AND_DESTINATION_TYPES);
 
   jv = .{type = JSON_Number};
-  error = auto_assign(cast(*u8)*f, type_info(type_of(f)), *jv);
+  error = auto_assign(cast(*u8)*f, type_info(type_of(f)), *jv, false);
   assert(error == .MISMATCHED_SOURCE_AND_DESTINATION_RUNTIME_SIZES);
 
   // Bool.
   b: bool;
-  error = auto_assign(cast(*u8)*b, type_info(type_of(b)), *jv);
+  error = auto_assign(cast(*u8)*b, type_info(type_of(b)), *jv, false);
   assert(error == .MISMATCHED_SOURCE_AND_DESTINATION_TYPES);
 
   // String.
   s: string;
-  error = auto_assign(cast(*u8)*s, type_info(type_of(s)), *jv);
+  error = auto_assign(cast(*u8)*s, type_info(type_of(s)), *jv, false);
   assert(error == .MISMATCHED_SOURCE_AND_DESTINATION_TYPES);
 
   // Struct.
@@ -366,23 +382,42 @@ test_auto_assign_failed :: () {
     x: int;
   }
   foo: Foo;
-  error = auto_assign(cast(*u8)*foo, type_info(type_of(foo)), *jv);
+  error = auto_assign(cast(*u8)*foo, type_info(type_of(foo)), *jv, false);
   assert(error == .MISMATCHED_SOURCE_AND_DESTINATION_TYPES);
 
   obj: *JSON_Value;
   obj, _, error = parse_value("{}");
   assert(!error);
-  error = auto_assign(cast(*u8)*foo, type_info(type_of(foo)), obj);
+  error = auto_assign(cast(*u8)*foo, type_info(type_of(foo)), obj, false);
   assert(error == .NO_SUCH_JSON_KEY);
 
   // Array.
   ra: [..] int;
-  error = auto_assign(cast(*u8)*ra, type_info(type_of(ra)), *jv);
+  error = auto_assign(cast(*u8)*ra, type_info(type_of(ra)), *jv, false);
   assert(error == .MISMATCHED_SOURCE_AND_DESTINATION_TYPES);
 
   a: [1] int;
-  error = auto_assign(cast(*u8)*a, type_info(type_of(a)), *jv);
+  error = auto_assign(cast(*u8)*a, type_info(type_of(a)), *jv, false);
   assert(error == .MISMATCHED_SOURCE_AND_DESTINATION_TYPES);
+}
+
+test_auto_assign_allow_missing_keys :: () {
+  JSON :: #string DONE
+{
+  "b": 2
+}
+  DONE
+
+  Foo :: struct {
+    a: int;
+    b: int;
+  }
+  f: Foo;
+  error := from_json(*f, JSON, true);
+  assert(!error);
+
+  // Make sure `f.b` is set, that we continue when the JSON is missing key `a`.
+  assert(f.b == 2, "Expected `b` to be set even when key `a` was not.");
 }
 
 main :: () {
@@ -414,4 +449,5 @@ main :: () {
   test_auto_assign_array_failed();
 
   test_auto_assign_failed();
+  test_auto_assign_allow_missing_keys();
 }
